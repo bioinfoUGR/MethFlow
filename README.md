@@ -1,5 +1,5 @@
 # MethFlow
-MethFlow is an optimized, open-source pipeline which performs DNA methylation profiling, detection of sequence variants, full integration with our methylation database,[_NGSmethDB_](http://bioinfo2.ugr.es/NGSmethDB), and differential methylation analysis. Briefly, the pipeline performs the following steps:
+MethFlow is an optimized, open-source pipeline which performs DNA methylation profiling, detection of sequence variants, full integration with our methylation database, [_NGSmethDB_](http://bioinfo2.ugr.es/NGSmethDB), and differential methylation analysis. Briefly, the pipeline performs the following steps:
 
 1.  Format conversion: convert SRA files to FASTQ by means of [_SRA Toolkit_](https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software). This only applies if the input data comes from Sequence Read Archive (SRA) public repository.
 2.  Adapter and low quality bases trimming by means of [_Trimmomatic_](http://www.usadellab.org/cms/?page=trimmomatic).
