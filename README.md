@@ -27,6 +27,8 @@ Connect to [PrecisionFDA](https://precision.fda.gov/).
 * Python 3 or higher
 * Perl 5 or higher
 * Java 8 or higher
+* [dialog](http://invisible-island.net/dialog) and [pythondialog](http://pythondialog.sourceforge.net)
+* [Zenity](https://help.gnome.org/users/zenity/stable) and [PyZenity for Python 3](https://github.com/rlebron88/PyZenity)
 * [FastQC](http://www.bioinformatics.babraham.ac.uk/projects/fastqc)
 * [SRA Toolkit](https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software) (fastq-dump)
 * [Trimmomatic](http://www.usadellab.org/cms/?page=trimmomatic)
