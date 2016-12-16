@@ -9,6 +9,7 @@ MethFlow is an optimized, open-source pipeline which performs DNA methylation pr
 6.  Get methylation maps from NGSmethDB.
 7.  Differential methylation analysis by _methylKit_ and _MOABS_ and generate a consensus of both.
 
+## Implementations
 _MethFlow_ pipeline was inplemented in three ways. We first provide the software optimized to run in a powerful and user-friendly cloud environment. Second, for users requiring the maximal level of data privacy, we developed _MethFlow<sup>VM</sup>_, a ready-to-use, fully-configured virtual machine which is able to run on most operating systems (Windows, Linux or Mac). With _MethFlow<sup>VM</sup>_ the user will no longer need to upload private data to any public server. Finally, advanced users can download the source code from a public repository, which allows installing and customizing _MethFlow_ on any operating system.
 
 ## _MethFlow_ app in the cloud
