@@ -14,7 +14,7 @@ _MethFlow_ pipeline was inplemented in three ways. We first provide the software
 ## _MethFlow_ app in the cloud
 Connect to [precisionFDA](https://precision.fda.gov/).
 
-## Get MethFlow<sup>VM</sup>
+## _MethFlow_ Virtual Machine
 1.  Install [VirtualBox](https://www.virtualbox.org/wiki/Downloads).
 2.  Install [VirtualBox Extension Pack](https://www.virtualbox.org/wiki/Downloads).
 3.  Download [MethFlow<sup>VM</sup>](http://bioinfo2.ugr.es:8080/MethFlow/download) ([mirror](https://docs.google.com/uc?id=0B6zaHLTx5o2bUWhPOXN0X1F4aEU&export=download)).
@@ -22,7 +22,7 @@ Connect to [precisionFDA](https://precision.fda.gov/).
 5.  Optional: [add a shared folder](https://www.virtualbox.org/manual/ch04.html#sharedfolders) (strongly recommended).
 6.  Run MethFlow<sup>VM</sup>.
 
-## Install MethFlow (standalone)
+## _MethFlow_ standalone programs
 ### Dependencies
 * Python 3 or higher
 * Perl 5 or higher
