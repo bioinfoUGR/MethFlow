@@ -11,19 +11,37 @@ MethFlow is an optimized, open-source pipeline which performs DNA methylation pr
 
 _MethFlow_ pipeline was inplemented in three ways. We first provide the software optimized to run in a powerful and user-friendly cloud environment. Second, for users requiring the maximal level of data privacy, we developed _MethFlow<sup>VM</sup>_, a ready-to-use, fully-configured virtual machine which is able to run on most operating systems (Windows, Linux or Mac). With _MethFlow<sup>VM</sup>_ the user will no longer need to upload private data to any public server. Finally, advanced users can download the source code from a public repository, which allows installing and customizing _MethFlow_ on any operating system.
 
-## MethFlow in the cloud
+## Use in the cloud
 Connect to [PrecisionFDA](https://precision.fda.gov/).
 
-## Install MethFlow<sup>VM</sup>
+## Get MethFlow<sup>VM</sup>
 1.  Install [VirtualBox](https://www.virtualbox.org/wiki/Downloads).
 2.  Install [VirtualBox Extension Pack](https://www.virtualbox.org/wiki/Downloads).
 3.  Download [MethFlow<sup>VM</sup>](http://bioinfo2.ugr.es:8080/MethFlow/download) ([mirror](https://docs.google.com/uc?id=0B6zaHLTx5o2bUWhPOXN0X1F4aEU&export=download)).
 4.  Import MethFlow<sup>VM</sup> to VirtualBox by double-clicking.
 5.  Optional: [add a shared folder](https://www.virtualbox.org/manual/ch04.html#sharedfolders) (strongly recommended).
-6.  Run MethFlow<sup>VM</sup>
+6.  Run MethFlow<sup>VM</sup>.
 
 ## Install MethFlow (standalone)
+### Dependencies
+* Python 3 or higher
+* Perl 5 or higher
+* Java 8 or higher
+* [FastQC](http://www.bioinformatics.babraham.ac.uk/projects/fastqc)
+* [SRA Toolkit](https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software) (fastq-dump)
+* [Trimmomatic](http://www.usadellab.org/cms/?page=trimmomatic)
+* [SAMtools](http://samtools.sourceforge.net) and [pysam](http://pysam.readthedocs.io/en/latest)
+* [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2) and [Biskmark](http://www.bioinformatics.babraham.ac.uk/projects/bismark)
+* [BSeQC](https://github.com/hutuqiu/bseqc)
+* [MethylExtract](http://bioinfo2.ugr.es/MethylExtract)
+* [methylKit](https://github.com/al2na/methylKit) and [MOABS](https://code.google.com/archive/p/moabs)
 
+Trimmomatic must be in the PATH.
+
+### Local Installation
+<pre style="text-align: center;">git clone https://github.com/bioinfoUGR/MethFlow.git
+cd MethFlow
+chmod +x MethFlow MethFlow_api MethFlow_diffmeth MethFlow_manager</pre>
 
 ## Quick Start
 <span id="ouHighlight__131_134TO132_134">Quick start is thought to try MethFlow without going into details and using the MethFlow virtual machine. For further information, see</span><span id="noHighlight_0.03053827676673926"> </span><span id="ouHighlight__162_163TO158_160">the</span><span id="noHighlight_0.34981369552068187"> [reference manual](http://bioinfo2.ugr.es:8080/MethFlow/reference-manual/)</span><span id="noHighlight_0.8654089653028183">.</span>
