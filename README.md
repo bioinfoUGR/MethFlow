@@ -40,20 +40,15 @@ Connect to [PrecisionFDA](https://precision.fda.gov/).
 
 All these programs must be in the PATH.
 
-MethFlow needs the follow script to launch Trimmomatic:
-```bash
-#!/bin/bash
-TRIMMOMATIC_PATH="/path/to/Trimmomatic"
-java -jar $TRIMMOMATIC_PATH "$@"
-```
-Replace the value of TRIMMOMATIC_PATH and add this script to the PATH: 
-
 ### Local Installation
+* Execute the following commands:
 ```bash
 git clone https://github.com/bioinfoUGR/MethFlow.git
 cd MethFlow
-chmod +x MethFlow MethFlow_api MethFlow_diffmeth MethFlow_manager
+chmod +x MethFlow MethFlow_api MethFlow_diffmeth MethFlow_manager Trimmomatic.sh
 ```
+* In the Trimmomatic.sh file, replace the value of TRIMMOMATIC_PATH by the path of Trimmomatic.jar file.
+* Add Trimmomatic.sh to the PATH.
 
 ## Quick Start
 <span id="ouHighlight__131_134TO132_134">Quick start is thought to try MethFlow without going into details and using the MethFlow virtual machine. For further information, see</span><span id="noHighlight_0.03053827676673926"> </span><span id="ouHighlight__162_163TO158_160">the</span><span id="noHighlight_0.34981369552068187"> [reference manual](http://bioinfo2.ugr.es:8080/MethFlow/reference-manual/)</span><span id="noHighlight_0.8654089653028183">.</span>
