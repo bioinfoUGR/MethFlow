@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+
+import argparse, argcomplete, json
+
+#subprocess.call(['register-python-argcomplete',sys.argv[0]])
+
+tasks = [
+'working_folder',
+'assembly_collection',
+'adapter_collection',
+'root_input_folder',
+'root_output_folder',
+'intermediates_folder',
+'plots_folder',
+'meth_folder',
+'diffmeth_folder',
+'methflow_conf',
+'api_conf',
+'diffmeth_conf',
+'get_test_datasets',
+'get_assemblies',
+'upload2galaxy',
+'upload2pfda'
+]
+
+parser = argparse.ArgumentParser()
+parser.add_argument('task', choices=tasks)
+argcomplete.autocomplete(parser)
+args = parser.parse_args()
