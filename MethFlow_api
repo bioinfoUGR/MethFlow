@@ -1,0 +1,1086 @@
+#!/usr/bin/env python3
+
+import os, sys, glob, re, locale, multiprocessing, time, datetime
+import yaml
+import pysam
+from dialog import Dialog
+
+
+locale.setlocale(locale.LC_ALL, '')
+
+
+class Config_obj(yaml.YAMLObject):
+    
+    yaml_tag = u'!MethFlow'
+    
+    def __init__(self, **kwargs):
+        params = ['samples', 'adapters', 'assembly', 'assembly2', 'methylation_context', 'threads', 'output_directory']
+        params.extend(['read_length', 'phred64'])
+        params.extend(['adapter_trimmed', 'bisulfite_bias_fixed'])
+        params.extend(['library', 'rrbs', 'not_seed_mismatch', 'seed_length', 'not_remove_duplicate', 'minimum_phred_score', 'minimum_read_length', 'minimum_coverage'])
+        for p in params:
+            if p in kwargs:
+                setattr(self, p, kwargs[p])
+            else:
+                setattr(self, p, None)
+        for p in kwargs:
+            if not p in params:
+                setattr(self, p, kwargs[p])
+
+
+def isPairedSRA(filename):
+    filename = os.path.abspath(filename)
+    contents = os.popen("fastq-dump -X 1 -Z --split-spot {}".format(filename)).read()
+
+    if contents.count("\n") == 4:
+        return False
+    elif contents.count("\n") == 8:
+        return True
+
+
+def add_sample(dpath):
+    extensions = ['*.sra', '*.fq', '*.bam', '*.sam']
+    paired = False
+    valid = True
+    for ext in extensions:
+        fpath = glob.glob(os.path.join(dpath, ext))
+        if ext == '*.sra':
+            for f in fpath:
+                code = os.system('vdb-validate {f} > /dev/null 2> /dev/null'.format(f = f))
+                if not code:
+                    valid = False
+            paired = all([isPairedSRA(f) for f in fpath])
+            if fpath == []:
+                paired = False
+        if ext == '*.fq':
+            for f in fpath:
+                code = os.system('validateFiles -type=fastq {f} > /dev/null 2> /dev/null'.format(f = f))
+                if not code:
+                    valid = False
+            pair_1 = glob.glob(os.path.join(dpath, '*_1.fq'))
+            pair_2 = glob.glob(os.path.join(dpath, '*_2.fq'))
+            if pair_1 != [] and pair_2 != [] and len(pair_1) == len(pair_2):
+                paired = True
+                fpath = [re.sub('_[1|2].fq$', '.fq', f) for f in fpath]
+        if ext == '*.bam':
+            for f in fpath:
+                code = os.system('validateFiles -type=bam {f} > /dev/null 2> /dev/null'.format(f = f))
+                if not code:
+                    valid = False
+            for f in fpath:
+                samfile = pysam.Samfile(f, "rb")
+                if next(samfile).is_paired:
+                    paired = True
+        if ext == '*.sam':
+            for f in fpath:
+                samfile = pysam.Samfile(f, "rb")
+                if next(samfile).is_paired:
+                    paired = True
+        fpath = [f.replace(dpath, '') for f in fpath]
+        fpath = sorted(list(set(fpath)))
+        if fpath and valid:
+            return {'directory': dpath, 'files': [os.path.splitext(f[1:])[0] for f in fpath], 'format': ext.replace('*.', '').replace('fq', 'fastq').upper(), 'paired': paired}
+    return {}
+    
+    
+def check_assembly(dpath):
+    assembly = False
+    fpath = glob.glob(os.path.join(dpath, '*.fa'))
+    if len(fpath) >= 1:
+        assembly = 'FASTA'
+    if all([os.path.isdir(os.path.join(dpath, 'CT_conversion')), os.path.isdir(os.path.join(dpath, 'GA_conversion'))]):
+        if all([os.path.isfile(os.path.join(dpath, 'CT_conversion', f)) for f in ['BS_CT.1.bt2', 'BS_CT.2.bt2', 'BS_CT.3.bt2', 'BS_CT.4.bt2', 'BS_CT.rev.1.bt2', 'BS_CT.rev.2.bt2', 'genome_mfa.CT_conversion.fa']]):
+            if all([os.path.isfile(os.path.join(dpath, 'GA_conversion', f)) for f in ['BS_GA.1.bt2', 'BS_GA.2.bt2', 'BS_GA.3.bt2', 'BS_GA.4.bt2', 'BS_GA.rev.1.bt2', 'BS_GA.rev.2.bt2', 'genome_mfa.GA_conversion.fa']]):
+                assembly = 'BISMARK_BT2'
+    return assembly
+
+def remove_sample(samples, index):
+    index = int(index) - 1
+    del samples[index]
+    return samples
+
+
+def select_samples(is_dialog):
+    
+    samples = []
+    ready = False 
+    dpath = ""
+    
+    while not dpath:
+        if not is_dialog:
+            dpath = input("Enter the path of your first sample directory: ").strip()
+            if os.path.isdir(dpath):
+                dpath = os.path.abspath(dpath)
+                sample = add_sample(dpath)
+                if not sample:
+                    sys.stderr.write("The entered path does not contain any valid file. Please try again.\n")
+                    dpath = ""
+                else:
+                    print("INFO: The entered path contains {sample_format} files.\n".format(sample_format = sample['format']))
+                    samples.append(sample)
+            else:
+                sys.stderr.write("The entered path is not a directory. Please try again.\n")
+                continue
+        else:
+            d = Dialog()
+            d.set_background_title("MethFlow")
+            code, dpath = d.dselect(os.path.abspath((os.getcwd())), title = "Enter the path of your first sample directory", ok_label = "SELECT", no_cancel = True)
+            dpath = dpath.strip()
+            if code == "esc":
+                raise SystemExit
+            if not code == "esc" and os.path.isdir(dpath):
+                dpath = os.path.abspath(dpath)
+                sample = add_sample(dpath)
+                if not sample:
+                    code = d.pause("The entered path does not contain any valid file. Please try again.", seconds = 10, no_cancel = True)
+                    if code == "esc":
+                        raise SystemExit
+                    dpath = ""
+                else:
+                    code = d.pause("INFO: The entered path contains {sample_format} files.".format(sample_format = sample['format']), seconds = 10, no_cancel = True)
+                    samples.append(sample)
+                    if code == "esc":
+                        raise SystemExit
+            else:
+                code = d.pause("The entered path is not a directory. Please try again.", seconds = 10, no_cancel = True)
+                if code == "esc":
+                    raise SystemExit
+                continue
+
+    while not ready:
+        if not is_dialog:
+            options = """
+1) List the samples
+2) Add a sample
+3) Remove a sample
+4) Continue
+            """
+            print("What do you want to do?")
+            print(options)
+            selected_option = input("Enter a number: ").strip()
+            if not selected_option in ['1', '2', '3', '4']:
+                sys.stderr.write("The entered option is not valid. Please try again.\n")
+                continue
+            elif selected_option == '1':
+                sample_list = """
+Samples:
+========
+"""
+                for index, sample in enumerate(samples):
+                    sample_list += "{index}) {sample}\n".format(index = index + 1, sample = sample['directory'])
+                print(sample_list)
+            elif selected_option == '2':
+                dpath = ""
+                while not dpath:
+                    dpath = input("Enter the path of a sample directory: ").strip()
+                    if os.path.isdir(dpath):
+                        dpath = os.path.abspath(dpath)
+                        sample = add_sample(dpath)
+                        if not sample:
+                            sys.stderr.write("The entered path does not contain any valid file. Please try again.\n")
+                            dpath = ""
+                        else:
+                            print("INFO: The entered path contains {sample_format} files.\n".format(sample_format = sample['format']))
+                            samples.append(sample)
+                    else:
+                        sys.stderr.write("The entered path is not a directory. Please try again.\n")
+                        continue
+            elif selected_option == '3':
+                index = 0
+                while not index:
+                    print("Select the sample you want to remove.")
+                    sample_list = """
+Samples:
+========
+"""
+                    for index, sample in enumerate(samples):
+                        sample_list += "{index}) {sample}\n".format(index = index + 1, sample = sample['directory'])
+                    print(sample_list)
+                    index = input("Enter a number: ").strip()
+                    if int(index)-1 < 0 or int(index)-1 >= len(samples):
+                        sys.stderr.write("The entered number is not on the list. Please try again.\n")
+                        index = 0
+                    else:
+                        remove_sample(samples, index)
+            elif selected_option == '4':
+                if samples:
+                    return samples
+                else:
+                    sys.stderr.write("You have not entered any sample. Please add a sample.\n")
+
+        if is_dialog:
+            d = Dialog()
+            d.set_background_title("MethFlow")
+            code, selected_option = d.radiolist("What do you want to do?", choices = [('1', "List the samples", True), ('2', "Add a sample", False), ('3', "Remove a sample", False)], ok_label = "SELECT", cancel_label = "CONTINUE")
+            if code == "esc":
+                raise SystemExit
+            if code == "cancel":
+                selected_option = '4'
+
+            if selected_option == '1':
+                sample_list = ""
+                for index, sample in enumerate(samples):
+                    sample_list += "{index}) {sample}\n".format(index = index + 1, sample = sample['directory'])
+                code = d.pause(sample_list, seconds = 10, title = "Samples", no_cancel = True)
+                if code == "esc":
+                    print(samples)
+                    raise SystemExit
+
+            elif selected_option == '2':
+                dpath = ""
+                code, dpath = d.dselect(os.path.abspath((os.getcwd())), title = "Enter the path of a sample directory", ok_label = "SELECT", no_cancel = True)
+                dpath = dpath.strip()
+                if code == "esc":
+                    raise SystemExit
+                if not code == "esc" and os.path.isdir(dpath):
+                    dpath = os.path.abspath(dpath)
+                    sample = add_sample(dpath)
+                    if not sample:
+                        code = d.pause("The entered path does not contain any valid file. Please try again.", seconds = 10, no_cancel = True)
+                        if code == "esc":
+                            raise SystemExit
+                        dpath = ""
+                    else:
+                        code = d.pause("INFO: The entered path contains {sample_format} files.".format(sample_format = sample['format']), seconds = 10, no_cancel = True)
+                        samples.append(sample)
+                        if code == "esc":
+                            raise SystemExit
+                else:
+                    code = d.pause("The entered path is not a directory. Please try again.", seconds = 10, no_cancel = True)
+                    if code == "esc":
+                        raise SystemExit
+                    continue
+
+            elif selected_option == '3':
+                choices = []
+                for index, sample in enumerate(samples):
+                    choices.append((str(index + 1), sample['directory'], False))
+                code, selected_options = d.checklist("Select the sample(s) you want to remove.", choices = choices, ok_label = "SELECT", no_cancel = True)
+                if code == "esc":
+                    raise SystemExit
+                n = 1
+                for option in sorted(selected_options):
+                    remove_sample(samples, str(int(index)-n))
+                    n += 1
+
+
+            elif selected_option == '4':
+                if samples:
+                    return samples
+                else:
+                    code = d.pause("You have not entered any sample. Please add a sample.", seconds = 10, no_cancel = True)
+                    if code == "esc":
+                        raise SystemExit
+                    continue
+
+def select_adapters(is_dialog):
+
+    if not is_dialog:
+        fpath = ""
+        while not fpath:
+            fpath = input("Enter the path of a FASTA file with the adapter sequences: ").strip()
+            if os.path.isfile(fpath):
+                fpath = os.path.abspath(fpath)
+                if not fpath.endswith('.fa'):
+                    sys.stderr.write("The entered path does not contain a valid FASTA. Please try again.\n")
+                    fpath = ""
+                else:
+                    return fpath
+            else:
+                sys.stderr.write("The entered path is not a file. Please try again.\n")
+                fpath = ""
+    else:
+        fpath = ""
+        while not fpath:
+            d = Dialog()
+            d.set_background_title("MethFlow")
+            code, fpath = d.fselect(os.path.abspath((os.getcwd())), title = "Enter the path of a FASTA file with the adapter sequences", ok_label = "SELECT", no_cancel = True)
+            fpath = fpath.strip()
+            if code == "esc":
+                raise SystemExit
+            if not code == "esc" and os.path.isfile(fpath):
+                fpath = os.path.abspath(fpath)
+                if not fpath.endswith('.fa'):
+                    code = d.pause("The entered path does not contain a valid FASTA. Please try again.", seconds = 10, no_cancel = True)
+                    if code == "esc":
+                        raise SystemExit
+                    fpath = ""
+                else:
+                    if code == "esc":
+                        raise SystemExit
+                    return fpath
+            else:
+                code = d.pause("The entered path is not a file. Please try again.", seconds = 10, no_cancel = True)
+                if code == "esc":
+                    raise SystemExit
+                fpath = ""
+
+
+def select_assemblies(is_dialog, has_assembly2):
+    assembly = {'format': '', 'directory': ''}
+    assembly2 = {'format': '', 'directory': '', 'use_for': ''}
+    
+    if not is_dialog:
+        dpath = ""
+        while not dpath:
+            dpath = input("Enter the path of the assembly directory: ").strip()
+            if os.path.isdir(dpath):
+                dpath = os.path.abspath(dpath)
+                assembly_format = check_assembly(dpath)
+                if not assembly_format:
+                    sys.stderr.write("The entered path does not contain any valid file. Please try again.\n")
+                    dpath = ""
+                else:
+                    assembly['format'] = assembly_format
+                    print("INFO: The entered path contains {assembly_format} files.\n".format(assembly_format = assembly['format']))
+                    assembly['directory'] = dpath
+            else:
+                sys.stderr.write("The entered path is not a directory. Please try again.\n")
+                continue
+        if has_assembly2:
+            dpath = ""
+            while not dpath:
+                dpath = input("Enter the path of the second assembly directory: ").strip()
+                if os.path.isdir(dpath):
+                    dpath = os.path.abspath(dpath)
+                    assembly_format = check_assembly(dpath)
+                    if not assembly_format:
+                        sys.stderr.write("The entered path does not contain any valid file. Please try again.\n")
+                        dpath = ""
+                    else:
+                        assembly2['format'] = assembly_format
+                        print("INFO: The entered path contains {assembly_format} files.\n".format(assembly_format = assembly['format']))
+                        assembly2['directory'] = dpath
+                else:
+                    sys.stderr.write("The entered path is not a directory. Please try again.\n")
+                    continue
+            while True:
+                options = """
+1) Ambiguous Mapping Reads
+2) Unmapped Reads
+3) Both
+                """
+                print("What do you want to use the assembly2?")
+                print(options)
+                selected_option = input("Enter a number: ").strip()
+                if not selected_option in ['1', '2', '3']:
+                    sys.stderr.write("The entered option is not valid. Please try again.\n")
+                    continue
+                else:
+                    if selected_option == '1':
+                        assembly2['use_for'] = 'ambiguous'
+                    elif selected_option == '2':
+                        assembly2['use_for'] = 'unmapped'
+                    elif selected_option == '3':
+                        assembly2['use_for'] = 'both'
+                    break
+
+    else:
+        dpath = ""
+        while not dpath:
+            d = Dialog()
+            d.set_background_title("MethFlow")
+            code, dpath = d.dselect(os.path.abspath((os.getcwd())), title = "Enter the path of the assembly directory", ok_label = "SELECT", no_cancel = True)
+            dpath = dpath.strip()
+            if code == "esc":
+                raise SystemExit
+            if not code == "esc" and os.path.isdir(dpath):
+                dpath = os.path.abspath(dpath)
+                assembly_format = check_assembly(dpath)
+                if not assembly_format:
+                    code = d.pause("The entered path does not contain any valid file. Please try again.", seconds = 10, no_cancel = True)
+                    if code == "esc":
+                        raise SystemExit
+                    dpath = ""
+                else:
+                    assembly['format'] = assembly_format
+                    code = d.pause("INFO: The entered path contains {assembly_format} files.\n".format(assembly_format = assembly['format']), seconds = 10, no_cancel = True)
+                    assembly['directory'] = dpath
+                    if code == "esc":
+                        raise SystemExit
+            else:
+                code = d.pause("The entered path is not a directory. Please try again.", seconds = 10, no_cancel = True)
+                if code == "esc":
+                    raise SystemExit
+                continue
+        if has_assembly2:
+            dpath = ""
+            while not dpath:
+                d = Dialog()
+                d.set_background_title("MethFlow")
+                code, dpath = d.dselect(os.path.abspath((os.getcwd())), title = "Enter the path of the second assembly directory", ok_label = "SELECT", no_cancel = True)
+                dpath = dpath.strip()
+                if code == "esc":
+                    raise SystemExit
+                if not code == "esc" and os.path.isdir(dpath):
+                    dpath = os.path.abspath(dpath)
+                    assembly_format = check_assembly(dpath)
+                    if not assembly_format:
+                        code = d.pause("The entered path does not contain any valid file. Please try again.", seconds = 10, no_cancel = True)
+                        if code == "esc":
+                            raise SystemExit
+                        dpath = ""
+                    else:
+                        assembly2['format'] = assembly_format
+                        code = d.pause("INFO: The entered path contains {assembly_format} files.\n".format(assembly_format = assembly['format']), seconds = 10, no_cancel = True)
+                        assembly2['directory'] = dpath
+                        if code == "esc":
+                            raise SystemExit
+                else:
+                    code = d.pause("The entered path is not a directory. Please try again.", seconds = 10, no_cancel = True)
+                    if code == "esc":
+                        raise SystemExit
+                    continue
+
+            d = Dialog()
+            d.set_background_title("MethFlow")
+            code, selected_options = d.checklist("What do you want to use the assembly2?", choices = [('1', "Ambiguous Mapping Reads", True), ('2', "Unmapped Reads", False)], ok_label = "SELECT", no_cancel = True)
+            if code == "esc":
+                raise SystemExit
+            if '1' in selected_options and '2' in selected_options:
+                assembly2['use_for'] = 'both'
+            elif '1' in selected_options:
+                assembly2['use_for'] = 'ambiguous'
+            elif '2' in selected_options:
+                assembly2['use_for'] = 'unmapped'
+
+    return assembly, assembly2
+
+def select_methylation_context(isdialog):
+    options = ['CG', 'CHG', 'CHH', 'ALL']
+    if not isdialog:
+        while True:
+            options = """
+1) CG
+2) CHG
+3) CHH
+4) ALL
+            """
+            print("What methylation context you want to analyze?")
+            print(options)
+            selected_option = input("Enter a number: ").strip()
+            if not selected_option in ['1', '2', '3', '4']:
+                sys.stderr.write("The entered option is not valid. Please try again.\n")
+                continue
+            else:
+                if selected_option == '1':
+                    return 'CG'
+                elif selected_option == '2':
+                    return 'CHG'
+                elif selected_option == '3':
+                    return 'CHH'
+                elif selected_option == '4':
+                    return 'ALL'
+    else:
+        d = Dialog()
+        d.set_background_title("MethFlow")
+        code, selected_options = d.checklist("What methylation context you want to analyze?", choices = [('1', "CG", True), ('2', "CHG", False), ('3', "CHH", False), ('4', "ALL", False)], ok_label = "SELECT", no_cancel = True)
+        if code == "esc":
+            raise SystemExit
+        if '1' in selected_options:
+            return 'CG'
+        elif '2' in selected_options:
+            return 'CHG'
+        elif '3' in selected_options:
+            return 'CHH'
+        elif '4' in selected_options:
+            return 'ALL'
+
+
+def select_threads(isdialog):
+    min_p = 2
+    max_p = multiprocessing.cpu_count() if multiprocessing.cpu_count() > 2 else 2
+    if not isdialog:
+        while True:
+            threads = input('How many threads you want to use? [from {} to {}]: '.format(min_p, max_p))
+            if not threads.isdigit() or int(threads.strip()) < min_p or int(threads.strip()) > max_p:
+                sys.stderr.write('You have entered an invalid value. Please try again')
+            else:
+                return int(threads.strip())
+    else:
+        d = Dialog()
+        d.set_background_title("MethFlow")
+        code, threads = d.rangebox("How many threads you want to use?", min = min_p, max = max_p, init = max_p, ok_label = "SELECT", no_cancel = True)
+        if code == "esc":
+            raise SystemExit
+        return int(threads)
+
+
+def select_output(is_dialog):
+
+    if not is_dialog:
+        dpath = ""
+        while not dpath:
+            dpath = input("Enter the output directory: ")
+            dpath = os.path.abspath(dpath)
+            if not os.path.exists(dpath):
+                os.makedirs(dpath)
+                return dpath
+            elif os.path.isfile(dpath):
+                sys.stderr.write("The entered path is a file! Please select a folder.\n")
+                dpath = ""
+            else:
+                return dpath
+    else:
+        dpath = ""
+        while not dpath:
+            d = Dialog()
+            d.set_background_title("MethFlow")
+            code, dpath = d.dselect(os.path.abspath((os.getcwd())), title = "Enter the output directory", ok_label = "SELECT", no_cancel = True)
+            dpath = os.path.abspath(dpath.strip())
+            if code == "esc":
+                raise SystemExit
+            if not os.path.exists(dpath):
+                os.makedirs(dpath)
+                return dpath
+            elif os.path.isfile(dpath):
+                code = d.pause("The entered path is a file! Please select a folder.", seconds = 10, no_cancel = True)
+                if code == "esc":
+                    raise SystemExit
+                fpath = ""
+            else:
+                return dpath
+
+
+def load_config(config_file):
+    config_obj = yaml.load(config_file.read())
+    return config_obj
+
+
+def _steps(project):
+    steps = []
+    # SRA to FASTQ
+    cmd = "fastq-dump --split-files --skip-technical --outdir @outdir @file.sra"
+    steps.append(cmd)
+    # FASTQ FASTQC
+    cmd = "fastqc --format fastq --outdir @outdir @file_1.fq @file_2.fq"
+    steps.append(cmd)
+    # FASTQ TRIMMING
+    cmd = "java -jar /opt/trimmomatic/trimmomatic.jar @E @phred -threads $threads @file_1.fq @file_2.fq @paired_1.fq @unpaired_1.fq @paired_2.fq @unpaired_2.fq ILLUMINACLIP:@adapters:2:30:10 TRAILING:$minimum_pthred_score SLIDINGWINDOW:35:$minimum_pthred_score MINLEN:$minimum_read_length"
+    steps.append(cmd)
+    # TRIMMED_FASTQ FASTQC
+    cmd = "fastqc --format fastq --outdir @outdir @file_1.fq @file_2.fq"
+    steps.append(cmd)
+    # BISMARK ASSEMBLY
+    cmd = "bismark --bowtie2 --@phred-quals @library --multicore $threads/2 -N $seed_mismatches -L $seed_length --unmapped --ambiguous --output_dir @outdir --temp_dir @tmpdir @assembly @-1 @file_1.fq @-2 @file_2.fq"
+    steps.append(cmd)
+    # BISMARK ASSEMBLY2
+    cmd = "bismark --bowtie2 --@phred-quals @library --multicore $threads/2 -N $seed_mismatches -L $seed_length --output_dir @outdir --temp_dir @tmpdir @assembly2 @-1 @file_1.fq.gz @-2 @file_2.fq.gz"
+    steps.append(cmd)
+    # BSEQC ASSEMBLY
+    cmd = "bseqc @mode -s @file.bam -r @assembly -l @read_length -n mbias -p 0.05"
+    steps.append(cmd)
+    # BSEQC ASSEMBLY2
+    cmd = "bseqc @mode -s @file.bam -r @assembly2 -l @read_length -n mbias -p 0.05"
+    steps.append(cmd)
+    # METHYLEXTRACT
+    cmd = "MethylExtract seq=@assemblies inDir=@indir outDir=@outdir flagW=@W flagC=@C minDepthMeth=$minimum_coverage context=$methylation_context minQ=$mininum_phred_score delDup=$not_remove_duplicate simDupPb=$seed_length"
+    steps.append(cmd)
+    setattr(project, 'steps', steps)
+
+
+def save_config(config_obj, isdialog):
+    if not isdialog:
+        while not yesno:
+            yesno = input("Do you want to save your project? [Y/N]: ")
+            yesno = yesno.strip().upper()[0]
+            if yesno == "N":
+                return
+            elif yesno == "Y":
+                fname = input("Enter the path of your output file (.yaml): ")
+                fname = fname.strip()
+                with open(fname, 'wt') as handle:
+                    handle.write(yaml.dump(config_obj, default_flow_style = False))
+            else:
+                yesno = ""
+    else:
+        d = Dialog()
+        d.set_background_title("MethFlow")
+        code = d.yesno("Do you want to save your project?", yes_label = "YES", no_label = "NO")
+        if code == "esc":
+            raise SystemExit
+        elif code == "cancel":
+            return
+        elif code == "ok":
+            code, fpath = d.fselect(os.path.abspath((os.getcwd())), title = "Enter the path of your output file (.yaml)", ok_label = "SELECT", no_cancel = True)
+            fpath = fpath.strip()
+            with open(fpath, 'wt') as handle:
+                handle.write(yaml.dump(config_obj, default_flow_style = False))
+
+def _timestamp():
+    return datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def run_pipeline(project):
+    
+    if not os.path.exists(os.path.join(project.output_directory, 'LOGS')): os.makedirs(os.path.join(project.output_directory, 'LOGS'))
+    project.bisulfite_bias_fixed = True
+    setattr(project, 'checkpoint1', False)
+    setattr(project, 'checkpoint2', False)
+    
+    if project.assembly2['directory']:
+        setattr(project, 'samples2', [])
+        for sample in project.samples:
+            files = []
+            for fname in sample['files']:
+                if project.assembly2['use_for'] == 'ambiguous':
+                    files.append(fname + '.fq_ambiguous_reads')
+                elif project.assembly2['use_for'] == 'unmapped':
+                    files.append(fname + '.fq_unmapped_reads')
+                elif project.assembly2['use_for'] == 'both':
+                    files.append(fname + '.fq_ambiguous_reads')
+                    files.append(fname + '.fq_unmapped_reads')
+        project.samples2.append({'files': files})
+    
+    # SRA to FASTQ
+    for index, sample in enumerate(project.samples):
+        if sample['format'] == "SRA":
+            indir = sample['directory']
+            logdir = os.path.join(project.output_directory, 'LOGS', str(index+1))
+            outdir = os.path.join(project.output_directory, 'FASTQ', str(index+1))
+            print(_timestamp() + " SAMPLE {}: Converting SRA to FASTQ.".format(index + 1))
+            if not os.path.exists(logdir): os.makedirs(logdir)
+            if not os.path.exists(outdir): os.makedirs(outdir)
+            for fname in sample['files']:
+                fpath = os.path.join(sample['directory'], fname)
+                step = project.steps[0]
+                step = step.replace('@outdir', outdir) 
+                step = step.replace('@file', fpath) 
+                os.system(step + " 2> {}".format(os.path.join(logdir, 'SRA.log')))
+                
+            project.samples[index]['directory'] = outdir
+            project.samples[index]['format'] = "FASTQ"
+            print(_timestamp() + " Success!")
+            
+    # FASTQ FASTQC
+    for index, sample in enumerate(project.samples):
+        if sample['format'] == "FASTQ":
+            indir = sample['directory']
+            logdir = os.path.join(project.output_directory, 'LOGS', str(index+1))
+            outdir = os.path.join(project.output_directory, 'FASTQC', 'FASTQ', str(index+1))
+            print(_timestamp() + "SAMPLE {}: Checking Quality".format(index + 1))
+            if not os.path.exists(logdir): os.makedirs(logdir)
+            if not os.path.exists(outdir): os.makedirs(outdir)
+            phred64 = False
+            read_length = 35
+            for fname in sample['files']:
+                if not sample['paired']:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[1]
+                    step = step.replace('@outdir', outdir) 
+                    step = step.replace('@file_1', '@file') 
+                    step = step.replace('@file_2.fq', ' ') 
+                    step = step.replace('@file', fpath) 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'FASTQC.log')))
+                    
+                else:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[1]
+                    step = step.replace('@outdir', outdir) 
+                    step = step.replace('@file', fpath) 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'FASTQC.log')))
+                    
+            #os.system("unzip '{}/*.zip'".format(outdir))
+            for root,dirs,files in os.walk(outdir):
+                for f in files:
+                    if f == "fastqc_data.txt":
+                        rl = os.popen("grep 'Sequence length' {}".format(os.path.join(root, f))).read().replace('Sequence length', '')
+                        enc = os.popen("grep 'Encoding' {}".format(os.path.join(root, f))).read()
+                        if not 'Illumina 1.9' or 'Illumina 1.8' in enc:
+                            phred64 = True
+                        if "-" in rl:
+                            rl = int(rl.strip().split('-')[1])
+                        else:
+                            rl = int(rl.strip())
+                        if rl > read_length:
+                            read_length = rl
+            project.samples[index]['phred64'] = phred64
+            project.samples[index]['read_length'] = read_length
+            print("Detected phred64: " + str(project.samples[index]['phred64']))
+            print("Detected Read Length: " + str(project.samples[index]['read_length']))
+            print(_timestamp() + " Success!")
+    
+    # FASTQ TRIMMING
+    for index, sample in enumerate(project.samples):
+        if sample['format'] == "FASTQ" and not project.adapter_trimmed:
+            indir = sample['directory']
+            logdir = os.path.join(project.output_directory, 'LOGS', str(index+1))
+            outdir = os.path.join(project.output_directory, 'TRIMMED_FASTQ', str(index+1))
+            print(_timestamp() + "SAMPLE {}: Trimming Adapters".format(index + 1))
+            if not os.path.exists(logdir): os.makedirs(logdir)
+            if not os.path.exists(outdir): os.makedirs(outdir)
+            for fname in sample['files']:
+                if not sample['paired']:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[2]
+                    step = step.replace('@E', 'SE') 
+                    step = step.replace('@phred', '-phred33' if not sample['phred64'] else '-phred64') 
+                    step = step.replace('@file_1', '@file') 
+                    step = step.replace('@file_2.fq', ' ') 
+                    step = step.replace('@paired_1', '@paired') 
+                    step = step.replace('@paired_2.fq', ' ') 
+                    step = step.replace('@unpaired_1.fq', ' ') 
+                    step = step.replace('@unpaired_2.fq', ' ') 
+                    step = step.replace('@file', fpath) 
+                    step = step.replace('@paired', os.path.join(outdir, fname)) 
+                    step = step.replace('@adapters', project.adapters) 
+                    step = step.replace('$threads', str(project.threads))
+                    step = step.replace('$minimum_pthred_score', str(project.minimum_phred_score)) 
+                    step = step.replace('$minimum_read_length', str(project.minimum_read_length)) 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'TRIMMED_FASTQ.log')))
+                    
+                else:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[2]
+                    step = step.replace('@E', 'PE') 
+                    step = step.replace('@phred', '-phred33' if not sample['phred64'] else '-phred64') 
+                    step = step.replace('@file', fpath) 
+                    step = step.replace('@paired', os.path.join(outdir, fname)) 
+                    step = step.replace('@unpaired', os.path.join(outdir, 'unpaired')) 
+                    step = step.replace('@adapters', project.adapters) 
+                    step = step.replace('$threads', project.threads) 
+                    step = step.replace('$minimum_pthred_score', project.minimum_pthred_score) 
+                    step = step.replace('$minimum_read_length', project.minimum_read_length) 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'TRIMMED_FASTQ.log')))
+                    
+            project.samples[index]['directory'] = outdir
+            print(_timestamp() + " Success!")
+
+    # TRIMMED_FASTQ FASTQC
+    for index, sample in enumerate(project.samples):
+        if sample['format'] == "FASTQ" and not project.adapter_trimmed:
+            indir = sample['directory']
+            logdir = os.path.join(project.output_directory, 'LOGS', str(index+1))
+            outdir = os.path.join(project.output_directory, 'FASTQC', 'TRIMMED_FASTQ', str(index+1))
+            print(_timestamp() + "SAMPLE {}: Checking Quality".format(index + 1))
+            if not os.path.exists(logdir): os.makedirs(logdir)
+            if not os.path.exists(outdir): os.makedirs(outdir)
+            for fname in sample['files']:
+                if not sample['paired']:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[3]
+                    step = step.replace('@outdir', outdir) 
+                    step = step.replace('@file_1', '@file') 
+                    step = step.replace('@file_2.fq', ' ') 
+                    step = step.replace('@file', fpath) 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'TRIMMED_FASTQ_FASTQC.log')))
+                    
+                else:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[3]
+                    step = step.replace('@outdir', outdir) 
+                    step = step.replace('@file', fpath) 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'TRIMMED_FASTQ_FASTQC.log')))
+            
+            print(_timestamp() + " Success!")
+
+    # BISMARK ASSEMBLY
+    for index, sample in enumerate(project.samples):
+        if sample['format'] == "FASTQ":
+            indir = sample['directory']
+            logdir = os.path.join(project.output_directory, 'LOGS', str(index+1))
+            outdir = os.path.join(project.output_directory, 'BAM', str(index+1))
+            tmpdir = os.path.join(project.output_directory, 'TMP', str(index+1))
+            print(_timestamp() + " SAMPLE {}: Aligning against Assembly".format(index + 1))
+            if not os.path.exists(logdir): os.makedirs(logdir)
+            if not os.path.exists(outdir): os.makedirs(outdir)
+            if not os.path.exists(tmpdir): os.makedirs(tmpdir)
+            for fname in sample['files']:
+                if not sample['paired']:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[4]
+                    step = step.replace('@phred-quals', 'phred33-quals' if not sample['phred64'] else 'phred64-quals') 
+                    if project.library == 'directional':
+                        step = step.replace('@library', '')
+                    elif project.library == 'non_directional':
+                        step = step.replace('@library', '--non_directional')
+                    elif project.library == 'pbat':
+                        step = step.replace('@library', '--pbat')
+                    step = step.replace('$threads/2', str(int(project.threads/2))) 
+                    step = step.replace('$seed_mismatches', '1' if not project.not_seed_mismatch else '0') 
+                    step = step.replace('$seed_length', str(project.seed_length)) 
+                    step = step.replace('@outdir', outdir) 
+                    step = step.replace('@tmpdir', tmpdir) 
+                    if project.assembly['format'] == "FASTA":
+                        os.system('bismark_genome_preparation --bowtie2 {} 2> {}'.format(project.assembly['directory'], os.path.join(logdir, 'ASSEMBLY.log')))
+                        project.assembly['format'] = "BISMARK_BT2"
+                    step = step.replace('@assembly', project.assembly['directory']) 
+                    step = step.replace('@file_1', fpath) 
+                    step = step.replace('@file_2.fq', ' ') 
+                    step = step.replace('@-1', ' ') 
+                    step = step.replace('@-2', ' ') 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'BAM.log')))
+                    
+                else:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[4]
+                    step = step.replace('@phred-quals', 'phred33-quals' if not sample['phred64'] else 'phred64-quals') 
+                    step = step.replace('$threads/2', str(int(project.threads/2))) 
+                    step = step.replace('$seed_mismatches', '1' if not project.not_seed_mismatch else '0') 
+                    step = step.replace('$seed_length', str(project.seed_length)) 
+                    step = step.replace('@outdir', outdir) 
+                    step = step.replace('@tmpdir', tmpdir) 
+                    if project.assembly['format'] == "FASTA":
+                        os.system('bismark_genome_preparation --bowtie2 {} 2> {}'.format(project.assembly['directory'], os.path.join(logdir, 'ASSEMBLY.log')))
+                        project.assembly['format'] == "BISMARK_BT2"
+                    step = step.replace('@assembly', project.assembly['directory']) 
+                    step = step.replace('@file', fpath) 
+                    step = step.replace('@-1', '-1') 
+                    step = step.replace('@-2', '-2') 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'BAM.log')))
+                    
+            project.samples[index]['directory'] = outdir
+            project.samples[index]['format'] = "BAM"    
+            if not sample['paired']:
+                project.samples[index]['files'] = [fname + '.fq_bismark_bt2' for fname in project.samples[index]['files']]
+            else:
+                project.samples[index]['files'] = [fname + '.fq_bismark_bt2_pe' for fname in project.samples[index]['files']]
+            print(_timestamp() + " Success!")
+
+    # BISMARK ASSEMBLY2
+    if project.assembly2['directory']:
+        for index, sample in enumerate(project.samples2):
+            indir = os.path.join(project.output_directory, 'BAM', str(index+1))
+            outdir = os.path.join(project.output_directory, 'BAM', str(index+1))
+            tmpdir = os.path.join(project.output_directory, 'TMP', str(index+1))
+            print(_timestamp() + " SAMPLE {}: Aligning against Assembly2".format(index + 1))
+            if not os.path.exists(outdir): os.makedirs(outdir)
+            if not os.path.exists(tmpdir): os.makedirs(tmpdir)
+            for fname in sample['files']:
+                if not project.samples[index]['paired']:
+                    fpath = os.path.join(os.path.join(project.output_directory, 'BAM', str(index+1)), fname)
+                    step = project.steps[5]
+                    step = step.replace('@phred-quals', 'phred33-quals' if not project.samples[index]['phred64'] else 'phred64-quals') 
+                    if project.library == 'directional':
+                        step = step.replace('@library', '')
+                    elif project.library == 'non_directional':
+                        step = step.replace('@library', '--non_directional')
+                    elif project.library == 'pbat':
+                        step = step.replace('@library', '--pbat')
+                    step = step.replace('$threads/2', str(int(project.threads/2))) 
+                    step = step.replace('$seed_mismatches', '1' if not project.not_seed_mismatch else '0') 
+                    step = step.replace('$seed_length', str(project.seed_length)) 
+                    step = step.replace('@outdir', outdir) 
+                    step = step.replace('@tmpdir', tmpdir) 
+                    if project.assembly2['format'] == "FASTA":
+                        os.system('bismark_genome_preparation --bowtie2 {} 2> {}'.format(project.assembly2['directory'], os.path.join(logdir, 'ASSEMBLY2.log')))
+                        
+                        project.assembly2['format'] = "BISMARK_BT2"
+                    step = step.replace('@assembly2', project.assembly2['directory']) 
+                    step = step.replace('@file_1', fpath) 
+                    step = step.replace('@file_2.fq', ' ') 
+                    step = step.replace('@-1', ' ') 
+                    step = step.replace('@-2', ' ') 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'BAM.log')))
+                    
+                else:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[5]
+                    step = step.replace('@phred-quals', 'phred33-quals' if not sample['phred64'] else 'phred64-quals') 
+                    step = step.replace('$threads/2', str(int(project.threads/2))) 
+                    step = step.replace('$seed_mismatches', '1' if not project.not_seed_mismatch else '0') 
+                    step = step.replace('$seed_length', str(project.seed_length)) 
+                    step = step.replace('@outdir', outdir) 
+                    step = step.replace('@tmpdir', tmpdir) 
+                    if project.assembly2['format'] == "FASTA":
+                        os.system('bismark_genome_preparation --bowtie2 {} 2> {}'.format(project.assembly2['directory'], os.path.join(logdir, 'ASSEMBLY2.log')))
+                        project.assembly2['format'] == "BISMARK_BT2"
+                    step = step.replace('@assembly2', project.assembly2['directory']) 
+                    step = step.replace('@file', fpath) 
+                    step = step.replace('@-1', '-1') 
+                    step = step.replace('@-2', '-2') 
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'BAM.log')))
+                    
+            print(_timestamp() + " Success!")
+
+    # BSEQC ASSEMBLY
+    if not project.bisulfite_bias_fixed:
+        setattr(project, 'checkpoint1', False)
+        for index, sample in enumerate(project.samples):
+            if not project.bisulfite_bias_fixed and (sample['format'] == "BAM" or sample['format'] == "SAM"):
+                indir = sample['directory']
+                logdir = os.path.join(project.output_directory, 'LOGS', str(index+1))
+                outdir = os.path.join(project.output_directory, 'FIXED_SAM', str(index+1))
+                print(_timestamp() + "SAMPLE {}: Fixing Bisulfite Bias".format(index + 1))
+                if not os.path.exists(logdir): os.makedirs(logdir)
+                if not os.path.exists(outdir): os.makedirs(outdir)
+                os.chdir(outdir)
+                for fname in sample['files']:
+                    fpath = os.path.join(sample['directory'], fname)
+                    step = project.steps[6]
+                    step = step.replace('@mode', 'mbias' if not project.rrbs else 'rrbs') 
+                    step = step.replace('@file.bam', fpath+'.bam' if sample['format'] == "BAM" else fpath+'.sam') 
+                    gpath = glob.glob(os.path.join(project.assembly['directory'], '*.fa'))
+                    if not os.path.exists(os.path.join(project.output_directory, 'ASSEMBLIES')): os.makedirs(os.path.join(project.output_directory, 'ASSEMBLIES'))
+                    gfiles = []
+                    for f in gpath:
+                        gfiles.append(f)
+                    if not project.checkpoint1:
+                        if not os.path.exists(os.path.join(project.output_directory, 'ASSEMBLIES')): os.makedirs(os.path.join(project.output_directory, 'ASSEMBLIES'))
+                        os.system('cat {} > {}'.format(' '.join(gfiles), os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly.fa')))
+                        project.checkpoint1 = True
+                    project.assembly['directory'] = os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly.fa')
+                    step = step.replace('@assembly', project.assembly['directory']) 
+                    step = step.replace('@read_length', str(sample['read_length'])) 
+                    if sample['format'] == "SAM":
+                        step.append('--sam')
+                    os.system(step + " 2> {}".format(os.path.join(logdir, 'FIXED_SAM.log')))
+                    
+
+                project.samples[index]['directory'] = outdir
+                project.samples[index]['format'] = "SAM"
+                for fname in project.samples[index]['files']:
+                    os.system("mv {} {}".format(os.path.join(project.output_directory, 'BAM', fname+'_mbias_filter.sam'), os.path.join(project.output_directory, 'FIXED_SAM')))
+                project.samples[index]['files'] = [fname + '_mbias_filter' if os.popen("grep -v '^@' {}".format(os.path.join(project.samples[index]['directory'], fname+'_mbias_filter.sam'))).read() != '' else os.path.join('../BAM', fname) for fname in project.samples[index]['files']]
+                print(_timestamp() + " Success!")
+
+    # BSEQC ASSEMBLY2
+    if not project.bisulfite_bias_fixed:
+        setattr(project, 'checkpoint2', False)
+        if project.assembly2['directory']:
+            for index, sample in enumerate(project.samples2):
+                if not project.bisulfite_bias_fixed and (sample['format'] == "BAM" or sample['format'] == "SAM"):
+                    indir = os.path.join(project.output_directory, 'BAM', str(index+1))
+                    outdir = os.path.join(project.output_directory, 'FIXED_SAM', str(index+1))
+                    print(_timestamp() + "SAMPLE {}: Fixing Bisulfite Bias (Assembly2)".format(index + 1))
+                    if not os.path.exists(outdir): os.makedirs(outdir)
+                    os.chdir(outdir)
+                    for fname in sample['files']:
+                        if project.samples[index]['paired']:
+                            fname += '_bismark_bt2_pe'
+                        else:
+                            fname += '_bismark_bt2'
+                        fpath = os.path.join(indir, fname)
+                        step = project.steps[7]
+                        step = step.replace('@mode', 'mbias' if not project.rrbs else 'rrbs') 
+                        step = step.replace('@file.bam', fpath+'.bam' if sample['format'] == "BAM" else fpath+'.sam') 
+                        gpath = glob.glob(os.path.join(project.assembly2['directory'], '*.fa'))
+                        if not os.path.exists(os.path.join(project.output_directory, 'ASSEMBLIES')): os.makedirs(os.path.join(project.output_directory, 'ASSEMBLIES'))
+                        gfiles = []
+                        for f in gpath:
+                            gfiles.append(f)
+                        if not project.checkpoint2:
+                            os.system('cat {} > {}'.format(' '.join(gfiles), os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly2.fa')))
+                            project.checkpoint2 = True
+                        project.assembly2['directory'] = os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly2.fa')
+                        step = step.replace('@assembly2', project.assembly2['directory']) 
+                        step = step.replace('@read_length', str(sample['read_length'])) 
+                        if sample['format'] == "SAM":
+                            step +=' --sam'
+                        os.system(step + " 2> {}".format(os.path.join(logdir, 'FIXED_SAM.log')))
+                        
+                    for fname in project.samples2[index]['files']:
+                        os.system("mv {} {}".format(os.path.join(project.output_directory, 'BAM', fname+'_mbias_filter.sam'), os.path.join(project.output_directory, 'FIXED_SAM')))
+                    project.samples2[index]['files'] = [fname + '_mbias_filter' if os.popen("grep -v '^@' {}".format(os.path.join(project.output_directory, 'FIXED_SAM', fname+'_mbias_filter.sam'))).read() != '' else os.path.join('../BAM', fname) for fname in project.samples[index]['files']]
+                    print(_timestamp() + " Success!")
+
+    # METHYLEXTRACT
+    if not os.path.exists(os.path.join(project.output_directory, 'ASSEMBLIES', 'BOTH')): os.makedirs(os.path.join(project.output_directory, 'ASSEMBLIES', 'BOTH'))
+    if not project.checkpoint1:
+        gpath = glob.glob(os.path.join(project.assembly['directory'], '*.fa'))
+        if not os.path.exists(outdir): os.makedirs(os.path.join(project.output_directory, 'ASSEMBLIES'))
+        gfiles = []
+        for f in gpath:
+            gfiles.append(f)
+        if not project.checkpoint1:
+            os.system('cat {} > {}'.format(' '.join(gfiles), os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly.fa')))
+            project.checkpoint = True
+        project.assembly['directory'] = os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly.fa')
+    if not project.checkpoint2 and project.assembly2['directory']:
+        gpath = glob.glob(os.path.join(project.assembly2['directory'], '*.fa'))
+        if not os.path.exists(outdir): os.makedirs(os.path.join(project.output_directory, 'ASSEMBLIES'))
+        gfiles = []
+        for f in gpath:
+            gfiles.append(f)
+        if not project.checkpoint2:
+            os.system('cat {} > {}'.format(' '.join(gfiles), os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly2.fa')))
+            project.checkpoint2 = True
+    os.chdir(os.path.join(project.output_directory, 'ASSEMBLIES', 'BOTH'))
+    os.system("awk '/^>chr/ {OUT=substr($0,2) \".fa\"}; OUT{print >OUT}' " + "{}".format(os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly.fa')))
+    if project.assembly2['directory']:
+            os.system("awk '/^>chr/ {OUT=substr($0,2) \".fa\"}; OUT{print >OUT}' " + "{}".format(os.path.join(project.output_directory, 'ASSEMBLIES', 'assembly2.fa')))
+
+    for index, sample in enumerate(project.samples):
+        if sample['format'] == "BAM" or sample['format'] == "SAM":
+            indir = sample['directory']
+            logdir = os.path.join(project.output_directory, 'LOGS', str(index+1))
+            outdir = os.path.join(project.output_directory, 'METHYLATION_MAPS', str(index+1))
+            print(_timestamp() + "SAMPLE {}: Methylation Profiling".format(index + 1))
+            if not os.path.exists(logdir): os.makedirs(logdir)
+            if not os.path.exists(outdir): os.makedirs(outdir)
+            step = project.steps[8]
+            step = step.replace('@assemblies', os.path.join(project.output_directory, 'ASSEMBLIES', 'BOTH')) 
+            step = step.replace('@indir', indir) 
+            step = step.replace('@outdir', outdir) 
+            step = step.replace('@W', '0' if not sample['paired'] else '99,147') 
+            step = step.replace('@C', '16' if not sample['paired'] else '83,163') 
+            step = step.replace('$minimum_coverage', str(project.minimum_coverage)) 
+            step = step.replace('$methylation_context', project.methylation_context) 
+            step = step.replace('$minimum_phred_score', str(project.minimum_phred_score)) 
+            step = step.replace('$not_remove_duplicate', 'Y' if not project.not_remove_duplicate else 'N') 
+            step = step.replace('$seed_length', str(project.seed_length))
+            os.system(step + " > {}".format(os.path.join(logdir, 'METHYLATION_MAPS.log')))
+            
+            print(_timestamp() + " Success!")
+
+
+if __name__ == '__main__':
+
+    import argparse
+    parser = argparse.ArgumentParser(prog='MethFlow')
+    parser.add_argument('mode', action='store', choices=['configure','run'], help='Configure or Run?')
+    parser.add_argument('--use_assembly2', action='store_true', help='Use a second assembly')
+    parser.add_argument('--dialog', action='store_false', help='')
+    parser.add_argument('--config', type=argparse.FileType('r'), help='')
+    parser.add_argument('--assembly2', action='store_true', help='')
+    parser.add_argument('--adapter_trimmed', action='store_true', help='')
+    parser.add_argument('--bisulfite_bias_fixed', action='store_true', help='')
+    parser.add_argument('--library', type=str, choices=['directional', 'non_directional', 'pbat'], default='directional', help='') 
+    parser.add_argument('--rrbs', action='store_true', help='')
+    parser.add_argument('--not_seed_mismatch', action='store_true', help='')
+    parser.add_argument('--seed_length', type=int, default=32, help='') 
+    parser.add_argument('--not_remove_duplicate', action='store_true', help='')
+    parser.add_argument('--minimum_phred_score', type=int, default=20, help='')
+    parser.add_argument('--minimum_read_length', type=int, default=35, help='')
+    parser.add_argument('--minimum_coverage', type=int, default=1, help='')
+
+    args = parser.parse_args()
+
+
+    if args.config:
+        config_obj = load_config(args.config)
+        run_pipeline(config_obj)
+    else:
+        params = ['adapter_trimmed', 'bisulfite_bias_fixed', 'library', 'rrbs', 'not_seed_mismatch', 'seed_length', 'not_remove_duplicate', 'minimum_phred_score', 'minimum_read_length', 'minimum_coverage']
+        p_dict = {}
+        for p in params:
+            p_dict[p] = getattr(args, p)
+        config_obj = Config_obj(**p_dict)
+        setattr(config_obj, 'samples', select_samples(args.dialog))
+        setattr(config_obj, 'adapters', select_adapters(args.dialog))
+        assembly, assembly2 = select_assemblies(args.dialog, args.assembly2)
+        setattr(config_obj, 'assembly', assembly)
+        setattr(config_obj, 'assembly2', assembly2)
+        setattr(config_obj, 'methylation_context', select_methylation_context(args.dialog))
+        setattr(config_obj, 'threads', select_threads(args.dialog))
+        setattr(config_obj, 'output_directory', select_output(args.dialog))
+        _steps(config_obj)
+        save_config(config_obj, args.dialog)
+        if args.dialog:
+            d = Dialog()
+            d.set_background_title("MethFlow")
+            code = d.yesno("Do you want to run the pipeline now? Otherwise, load configuration file later.", yes_label = "YES", no_label = "NO")
+            if code == "ok":
+                run_pipeline(config_obj)
+            else:
+                raise SystemExit
+        else:
+            yesno = input("Do you want to run the pipeline now? [Y/N] Otherwise, load configuration file later: ")
+            yesno = yesno.strip().upper()[0]
+            if yesno == "Y":
+                run_pipeline(config_obj)
+            else:
+                raise SystemExit
+
+
+
