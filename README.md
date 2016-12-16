@@ -24,18 +24,19 @@ Connect to [PrecisionFDA](https://precision.fda.gov/).
 
 ## Install MethFlow (standalone)
 
+
 ## Quick Start
 <span id="ouHighlight__131_134TO132_134">Quick start is thought to try MethFlow without going into details and using the MethFlow virtual machine. For further information, see</span><span id="noHighlight_0.03053827676673926"> </span><span id="ouHighlight__162_163TO158_160">the</span><span id="noHighlight_0.34981369552068187"> [reference manual](http://bioinfo2.ugr.es:8080/MethFlow/reference-manual/)</span><span id="noHighlight_0.8654089653028183">.</span>
 
 ### The local database
 
-#### **Set your working folder**
+#### Set your working folder
 
 At first startup, you will be asked which working folder you want to use. If you ignore this question, your home folder, _/home/methflow_, will be used as working folder. If you want to change the working folder, open a terminal and type the following command:
 
 <pre style="text-align: center;">MethFlow_manager working_folder</pre>
 
-#### **Set your assembly collection**
+#### Set your assembly collection
 
 Tell MethFlow where the assembly collection is by typing:
 
@@ -43,7 +44,7 @@ Tell MethFlow where the assembly collection is by typing:
 
 This command looks for a folder named _Assemblies_ inside the working folder.
 
-#### **Set your adapter collection**
+#### Set your adapter collection
 
 Tell MethFlow where the adapter collection is by typing:
 
@@ -51,7 +52,7 @@ Tell MethFlow where the adapter collection is by typing:
 
 This command looks for a folder named _Adapters_ inside the working folder.
 
-#### **Set your root input folder**
+#### Set your root input folder
 
 Tell MethFlow where to look for the input folders:
 
@@ -59,7 +60,7 @@ Tell MethFlow where to look for the input folders:
 
 This command looks for a folder named _Inputs_ inside the working folder.
 
-#### **Set your root output folder**
+#### Set your root output folder
 
 Tell MethFlow where to kept the output folders:
 
@@ -67,7 +68,7 @@ Tell MethFlow where to kept the output folders:
 
 This command creates a folder named _Outputs_ inside the working folder.
 
-### **Get test datasets**
+#### Get test datasets
 
 Open a terminal and type the following command to get test datasets:
 
@@ -79,7 +80,7 @@ Test datasets are then downloaded and unpacked. These test datasets contain:
 *   A small assembly (chromosomes 12 and 19 of hg38). It goes to assemby collection.
 *   Data from nine samples (from three individuals and three tissues). It goes to root input folder.
 
-### **Launch MethFlow**
+### Launch MethFlow
 
 Now, launch MethFlow with default options:
 
