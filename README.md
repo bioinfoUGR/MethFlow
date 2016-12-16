@@ -30,11 +30,13 @@ Connect to [PrecisionFDA](https://precision.fda.gov/).
 * [FastQC](http://www.bioinformatics.babraham.ac.uk/projects/fastqc)
 * [SRA Toolkit](https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software) (fastq-dump)
 * [Trimmomatic](http://www.usadellab.org/cms/?page=trimmomatic)
-* [SAMtools](http://samtools.sourceforge.net) and [pysam](http://pysam.readthedocs.io/en/latest)
+* [SAMtools](http://samtools.sourceforge.net) and [pysam](http://pysam.readthedocs.io)
 * [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2) and [Biskmark](http://www.bioinformatics.babraham.ac.uk/projects/bismark)
 * [BSeQC](https://github.com/hutuqiu/bseqc)
 * [MethylExtract](http://bioinfo2.ugr.es/MethylExtract)
 * [methylKit](https://github.com/al2na/methylKit) and [MOABS](https://code.google.com/archive/p/moabs)
+* [BioBlend](https://bioblend.readthedocs.io)
+* [bedGraphToBigWig](http://hgdownload.soe.ucsc.edu/admin/exe) and [bigWigToBedGraph](http://hgdownload.soe.ucsc.edu/admin/exe)
 
 All these programs must be in the PATH.
 
