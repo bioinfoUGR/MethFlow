@@ -37,7 +37,7 @@ Connect to [PrecisionFDA](https://precision.fda.gov/).
 * [BSeQC](https://github.com/hutuqiu/bseqc)
 * [MethylExtract](http://bioinfo2.ugr.es/MethylExtract)
 * [methylKit](https://github.com/al2na/methylKit) and [MOABS](https://code.google.com/archive/p/moabs)
-* [BioBlend](https://bioblend.readthedocs.io)
+* [BioBlend](https://bioblend.readthedocs.io) and [precisionFDA uploader](https://precision.fda.gov)
 * [bedGraphToBigWig](http://hgdownload.soe.ucsc.edu/admin/exe) and [bigWigToBedGraph](http://hgdownload.soe.ucsc.edu/admin/exe)
 
 All these programs must be in the PATH.
