@@ -6,7 +6,7 @@ MethFlow is an optimized, open-source pipeline which performs DNA methylation pr
 3.  Alignment against one or two assemblies: firstly, short reads are aligned against the first assembly (assembly 1 from now on) producing uniquely-mapped, multiple-mapped and unmapped reads. Uniquely-mapped reads are kept to use in the next step. Secondly, multiple-mapped and/or unmapped reads are aligned against the second assembly (assembly 2 from now on) producing uniquely-mapped, multiple-mapped and unmapped reads. Uniquely-mapped reads are merged with previously obtained uniquely-mapped reads and used in the next step. [_Bismark_](http://www.bioinformatics.babraham.ac.uk/projects/bismark) is used as aligner.
 4.  Elimination of known technical artifacts by [_BSeQC_](https://github.com/hutuqiu/bseqc).
 5.  Detection of DNA methylation and sequence variants by [_MethylExtract_](http://bioinfo2.ugr.es/MethylExtract).
-6.  Get methylation maps from NGSmethDB.
+6.  Get methylation maps from [_NGSmethDB_](http://bioinfo2.ugr.es/NGSmethDB).
 7.  Differential methylation analysis by [_methylKit_](https://github.com/al2na/methylKit) and [_MOABS_](https://code.google.com/archive/p/moabs) and generate a consensus of both.
 
 ## Implementations
