@@ -1,0 +1,28 @@
+#!/usr/bin/env python
+
+import os, sys
+
+prev = sys.stdin.readline()
+for line in sys.stdin:
+	if not prev:
+		prev = line		
+	else:		
+		prevID = os.popen("printf \"{prev}\" | cut -f1,2".format(prev = prev)).read()
+		lineID = os.popen("printf \"{line}\" | cut -f1,2".format(line = line)).read()
+		if prevID==lineID:
+			prev = prev.replace("\t.", "\t0")
+			line = line.replace("\t.", "\t0")
+			prevCol = prev.strip().split("\t")
+			lineCol = line.strip().split("\t")
+			prevCol[3:] = map(int, prevCol[3:])
+			lineCol[3:] = map(int, lineCol[3:])
+			newCol = prevCol[:3]
+			newCol.extend([prevCol[i+3]+lineCol[i+3] for i in range(len(prevCol)-3)])
+			newCol = map(str, newCol)
+			new = "\t".join(newCol) + "\n"
+			sys.stdout.write(new)
+			prev = ""
+		else:
+			sys.stdout.write(prev)
+			prev = line
+sys.stdout.write(prev)
