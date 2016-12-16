@@ -1,13 +1,13 @@
 # MethFlow
 MethFlow is an optimized, open-source pipeline which performs DNA methylation profiling, detection of sequence variants, full integration with our methylation database, _NGSmethDB_, and differential methylation analysis. Briefly, the pipeline performs the following steps:
 
-1.  Format conversion: convert SRA files to FASTQ by means of _SRA Toolkit_. This only applies if the input data comes from Sequence Read Archive (SRA) public repository.
-2.  Adapter and low quality bases trimming by means of _Trimmomatic_.
-3.  Alignment against one or two assemblies: firstly, short reads are aligned against the first assembly (assembly 1 from now on) producing uniquely-mapped, multiple-mapped and unmapped reads. Uniquely-mapped reads are kept to use in the next step. Secondly, multiple-mapped and/or unmapped reads are aligned against the second assembly (assembly 2 from now on) producing uniquely-mapped, multiple-mapped and unmapped reads. Uniquely-mapped reads are merged with previously obtained uniquely-mapped reads and used in the next step. _Bismark_ is used as aligner.
-4.  Elimination of known technical artifacts by _BSeQC_.
-5.  Detection of DNA methylation and sequence variants by _MethylExtract_.
+1.  Format conversion: convert SRA files to FASTQ by means of [_SRA Toolkit_](https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software). This only applies if the input data comes from Sequence Read Archive (SRA) public repository.
+2.  Adapter and low quality bases trimming by means of [_Trimmomatic_](http://www.usadellab.org/cms/?page=trimmomatic).
+3.  Alignment against one or two assemblies: firstly, short reads are aligned against the first assembly (assembly 1 from now on) producing uniquely-mapped, multiple-mapped and unmapped reads. Uniquely-mapped reads are kept to use in the next step. Secondly, multiple-mapped and/or unmapped reads are aligned against the second assembly (assembly 2 from now on) producing uniquely-mapped, multiple-mapped and unmapped reads. Uniquely-mapped reads are merged with previously obtained uniquely-mapped reads and used in the next step. [_Bismark_](http://www.bioinformatics.babraham.ac.uk/projects/bismark) is used as aligner.
+4.  Elimination of known technical artifacts by [_BSeQC_](https://github.com/hutuqiu/bseqc).
+5.  Detection of DNA methylation and sequence variants by [_MethylExtract_](http://bioinfo2.ugr.es/MethylExtract).
 6.  Get methylation maps from NGSmethDB.
-7.  Differential methylation analysis by _methylKit_ and _MOABS_ and generate a consensus of both.
+7.  Differential methylation analysis by [_methylKit_](https://github.com/al2na/methylKit) and [_MOABS_](https://code.google.com/archive/p/moabs) and generate a consensus of both.
 
 ## Implementations
 _MethFlow_ pipeline was inplemented in three ways. We first provide the software optimized to run in a powerful and user-friendly cloud environment. Second, for users requiring the maximal level of data privacy, we developed _MethFlow<sup>VM</sup>_, a ready-to-use, fully-configured virtual machine which is able to run on most operating systems (Windows, Linux or Mac). With _MethFlow<sup>VM</sup>_ the user will no longer need to upload private data to any public server. Finally, advanced users can download the source code from a public repository, which allows installing and customizing _MethFlow_ on any operating system.
